@@ -1,0 +1,35 @@
+services:
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - '9411:9411'
+    networks:
+      - telemetry
+
+  goapp-service-a:
+    container_name: goapp-a
+    build:
+      context: ./service_a
+      dockerfile: Dockerfile
+    ports:
+      - '8080:8080'
+    depends_on:
+      - zipkin
+    networks:
+      - telemetry
+
+  goapp-service-b:
+    container_name: goapp-b
+    build:
+      context: ./service_b
+      dockerfile: Dockerfile
+    ports:
+      - '8081:8081'
+    depends_on:
+      - zipkin
+    networks:
+      - telemetry
+
+networks:
+  telemetry:
+    driver: bridge

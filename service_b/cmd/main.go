@@ -87,6 +87,7 @@ func getWeatherHandler(w http.ResponseWriter, r *http.Request) {
 		Temp_C: decodedWeather.Current.TempC,
 		Temp_F: decodedWeather.Current.TempF,
 		Temp_K: getKelvinTemp(decodedWeather.Current.TempC),
+		City:   decodedLocation.Locale,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

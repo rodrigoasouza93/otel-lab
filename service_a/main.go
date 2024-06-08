@@ -8,18 +8,48 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/rodrigoasouza93/otel-service-a/internal/dto"
-	"github.com/rodrigoasouza93/otel-service-a/internal/vo"
+	"github.com/rodrigoasouza93/otel-service-a/internal/application/dto"
+	"github.com/rodrigoasouza93/otel-service-a/internal/domain/vo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/zipkin"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 )
 
+func initProvider(serviceName string) (func(context.Context) error, error) {
+	ctx := context.Background()
+
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceName(serviceName),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource: %w", err)
+	}
+
+	exporter, err := zipkin.New("http://zipkin:9411/api/v2/spans")
+	if err != nil {
+		log.Fatalf("Fail to create Zipkin exporter: %v", err)
+	}
+
+	bsp := sdktrace.NewBatchSpanProcessor(exporter)
+	tracerProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithResource(res),
+		sdktrace.WithSpanProcessor(bsp),
+	)
+	otel.SetTracerProvider(tracerProvider)
+
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	return tracerProvider.Shutdown, nil
+}
+
 func main() {
-	setTracing()
+	initProvider("service-a")
 	http.HandleFunc("POST /", Handle)
 	fmt.Println("Listening on port 8080")
 	http.ListenAndServe(":8080", nil)
@@ -52,24 +82,6 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(output)
-}
-
-func setTracing() {
-	exporter, err := zipkin.New("http://zipkin:9411/api/v2/spans")
-	if err != nil {
-		log.Fatalf("Fail to create Zipkin exporter: %v", err)
-	}
-
-	tp := trace.NewTracerProvider(
-		trace.WithBatcher(exporter),
-		trace.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceNameKey.String("service-a"),
-		)),
-	)
-
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.TraceContext{})
 }
 
 func getInfo(cep string, ctx context.Context) (dto.DTOOutput, int, error) {

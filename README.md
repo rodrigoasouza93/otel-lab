@@ -4,6 +4,7 @@
 
 Para execução do projeto em ambiente de desenvolvimento deve primeiro criar um arquivo .env dentro da pasta service_b/cmd
 Esse arquivo deve ter as informações especificadas no arquivo service_b/cmd/.env.example
+WEATHER_API_KEY=
 
 Ao criar o arquivo deve retornar a pasta raiz do projeto e executar o comando:
 docker compose up --build

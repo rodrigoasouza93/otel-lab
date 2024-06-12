@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"time"
 
 	"github.com/rodrigoasouza93/otel-service-a/internal/application/dto"
 	"github.com/rodrigoasouza93/otel-service-a/internal/domain/vo"
+	"github.com/rodrigoasouza93/otel-service-a/internal/infra/infra/web"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/zipkin"
 	"go.opentelemetry.io/otel/propagation"
@@ -32,7 +36,7 @@ func initProvider(serviceName string) (func(context.Context) error, error) {
 
 	exporter, err := zipkin.New("http://zipkin:9411/api/v2/spans")
 	if err != nil {
-		log.Fatalf("Fail to create Zipkin exporter: %v", err)
+		return nil, fmt.Errorf("failed to create trace exporter: %w", err)
 	}
 
 	bsp := sdktrace.NewBatchSpanProcessor(exporter)
@@ -49,10 +53,42 @@ func initProvider(serviceName string) (func(context.Context) error, error) {
 }
 
 func main() {
-	initProvider("weather-tracer")
-	http.HandleFunc("POST /", Handle)
-	fmt.Println("Listening on port 8080")
-	http.ListenAndServe(":8080", nil)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	shutdown, err := initProvider("weather-tracer")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if err := shutdown(ctx); err != nil {
+			log.Fatal("failed to shutdown TracerProvider: %w", err)
+		}
+	}()
+
+	tracer := otel.Tracer("microservice-tracer")
+	server := web.NewServer(tracer)
+	router := server.CreateServer()
+	go func() {
+		log.Println("Starting server on port", "8080")
+		if err := http.ListenAndServe(":8080", router); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	select {
+	case <-sigCh:
+		log.Println("Shutting down gracefully, CTRL+C pressed...")
+	case <-ctx.Done():
+		log.Println("Shutting down due to other reason...")
+	}
+
+	// Create a timeout context for the graceful shutdown
+	_, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 }
 
 func Handle(w http.ResponseWriter, r *http.Request) {

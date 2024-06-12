@@ -49,7 +49,7 @@ func initProvider(serviceName string) (func(context.Context) error, error) {
 }
 
 func main() {
-	initProvider("service-a")
+	initProvider("weather-tracer")
 	http.HandleFunc("POST /", Handle)
 	fmt.Println("Listening on port 8080")
 	http.ListenAndServe(":8080", nil)
@@ -69,7 +69,7 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, span := otel.Tracer("service-a").Start(r.Context(), "get-service-b")
+	ctx, span := otel.Tracer("weather-tracer").Start(r.Context(), "get-service-b")
 	defer span.End()
 
 	var output dto.DTOOutput

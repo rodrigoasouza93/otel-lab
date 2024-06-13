@@ -11,7 +11,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rodrigoasouza93/otel-service-a/internal/application/dto"
 	"github.com/rodrigoasouza93/otel-service-a/internal/domain/vo"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -52,9 +51,7 @@ func (we *Webserver) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, span := otel.Tracer("weather-tracer").Start(r.Context(), "get-service-b")
-	defer span.End()
-
+	ctx, span := we.OTELTracer.Start(r.Context(), "get-service-b-info")
 	var output dto.DTOOutput
 	output, status, err := getInfo(cep.Value, ctx)
 	if err != nil {
@@ -62,6 +59,7 @@ func (we *Webserver) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	span.End()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(output)

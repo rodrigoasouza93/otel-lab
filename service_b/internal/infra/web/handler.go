@@ -3,7 +3,6 @@ package web
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -45,26 +44,23 @@ func (we *Webserver) getWeatherHandler(w http.ResponseWriter, r *http.Request) {
 	carrier := propagation.HeaderCarrier(r.Header)
 	ctx := r.Context()
 	ctx = otel.GetTextMapPropagator().Extract(ctx, carrier)
+	ctxGlobal, spanGlobal := we.OTELTracer.Start(ctx, "get-location-weather")
 	rawCep := r.PathValue("cep")
 	cep, err := vo.NewCep(rawCep)
 	if err != nil {
 		http.Error(w, "invalid zipcode", http.StatusUnprocessableEntity)
 		return
 	}
-	ctx, spanLocation := we.OTELTracer.Start(ctx, "GET-LOCATION")
-	defer spanLocation.End()
+	_, spanLocation := we.OTELTracer.Start(ctxGlobal, "location")
 	locationURL := "https://viacep.com.br/ws/" + cep.Value() + "/json"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, locationURL, nil)
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	req, err := http.NewRequestWithContext(ctxGlobal, http.MethodGet, locationURL, nil)
+	otel.GetTextMapPropagator().Inject(ctxGlobal, propagation.HeaderCarrier(req.Header))
 	if err != nil {
 		http.Error(w, "error creating request", http.StatusInternalServerError)
 		return
 	}
-	log.Default().Println(locationURL, req)
 	respLocation, err := http.DefaultClient.Do(req)
 	if err != nil || respLocation.StatusCode != http.StatusOK {
-		fmt.Println(respLocation)
-		fmt.Println(err)
 		http.Error(w, "can not find zipcode", http.StatusNotFound)
 		return
 	}
@@ -80,21 +76,19 @@ func (we *Webserver) getWeatherHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "can not find zipcode", http.StatusNotFound)
 		return
 	}
+	spanLocation.End()
 
 	config := configs.LoadConfig(".")
-	ctx, spanWeather := we.OTELTracer.Start(ctx, "GET-WEATHER")
-	defer spanWeather.End()
+	_, spanWeather := we.OTELTracer.Start(ctxGlobal, "weather")
 	weatherAPIURL := fmt.Sprintf("https://api.weatherapi.com/v1/current.json?key=%s&q=%s&aqi=no", config.WeatherAPIKey, url.QueryEscape(decodedLocation.Locale))
-	reqWeather, err := http.NewRequestWithContext(ctx, http.MethodGet, weatherAPIURL, nil)
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(reqWeather.Header))
+	reqWeather, err := http.NewRequestWithContext(ctxGlobal, http.MethodGet, weatherAPIURL, nil)
+	otel.GetTextMapPropagator().Inject(ctxGlobal, propagation.HeaderCarrier(reqWeather.Header))
 	if err != nil {
 		http.Error(w, "error creating request", http.StatusInternalServerError)
 		return
 	}
 	respWeather, err := http.DefaultClient.Do(reqWeather)
 	if respWeather.StatusCode != http.StatusOK || err != nil {
-		fmt.Println(weatherAPIURL)
-
 		http.Error(w, "can not get weather", respWeather.StatusCode)
 		return
 	}
@@ -105,6 +99,8 @@ func (we *Webserver) getWeatherHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "error decoding weather: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	spanWeather.End()
+	spanGlobal.End()
 	response := dto.WeatherOutput{
 		Temp_C: decodedWeather.Current.TempC,
 		Temp_F: decodedWeather.Current.TempF,

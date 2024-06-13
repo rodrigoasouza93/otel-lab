@@ -25,7 +25,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	shutdown, err := initProvider("weather-tracer")
+	shutdown, err := initProvider("weather-service")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func main() {
 		}
 	}()
 
-	tracer := otel.Tracer("microservice-tracer")
+	tracer := otel.Tracer("weather-tracer")
 	server := web.NewServer(tracer)
 	router := server.CreateServer()
 	go func() {
